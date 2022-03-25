@@ -100,7 +100,7 @@ public class Main {
         //Set the arx configuration
         ARXConfiguration config = ARXConfiguration.create();
         config.addPrivacyModel(new DPresence(0.0d,0.1d, researchSubset));
-        //config.setSuppressionLimit(0.1d);
+        config.setSuppressionLimit(0.1d);
         config.setQualityModel(Metric.createLossMetric(Metric.AggregateFunction.ARITHMETIC_MEAN));
         config.setAttributeWeight("gender_concept_id", 0.5d);
         config.setAttributeWeight("birth_datetime", 0.5d);
@@ -118,7 +118,7 @@ public class Main {
         //Get the data handle
         DataHandle dataHandle = result.getOutput();
 
-        //Write the loss
+        //Print the loss
         System.out.println(dataHandle.getTransformation().getLowestScore() + " " + dataHandle.getTransformation().getHighestScore());
 
         //Write the anonymized data
