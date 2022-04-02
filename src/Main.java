@@ -7,6 +7,8 @@ import org.deidentifier.arx.metric.Metric;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Date;
 
 public class Main {
@@ -16,36 +18,21 @@ public class Main {
 
         //Define the list of research sample datasets
         String[] researchDataSetNames = {
-            "people_who_died_from_corona"
+                "people_who_died_from_corona"
         };
 
         //Set the paths for the population table and the research table
         String populationDataSetPath = basePath + "population.csv";
         String researchDataSetPath = basePath + researchDataSetNames[0] + ".csv";
 
-        //Read in the population data
-        Data.DefaultData populationData = Data.create();
-        populationData.add("person_id","gender_concept_id","birth_datetime","race_concept_id");
-        try (BufferedReader br = new BufferedReader(new FileReader(populationDataSetPath))) {
-            br.readLine();
-            String line;
-            while ((line = br.readLine()) != null) {
-                String[] values = line.split(";");
-                populationData.add(values);
-            }
-        }
+        //Read in the population data using the CSV reader
+        Data populationData = Data.create(populationDataSetPath, StandardCharsets.UTF_8,';');
 
-        //Read in the research data
-        Data.DefaultData researchData = Data.create();
-        researchData.add("person_id","gender_concept_id","birth_datetime","race_concept_id");
-        try (BufferedReader br = new BufferedReader(new FileReader(researchDataSetPath))) {
-            br.readLine();
-            String line;
-            while ((line = br.readLine()) != null) {
-                String[] values = line.split(";");
-                researchData.add(values);
-            }
-        }
+        //Read in the research data using the CSV reader
+        Data researchData = Data.create(researchDataSetPath,StandardCharsets.UTF_8,';');
+
+        //Create the research sample subset
+        DataSubset researchSubset = DataSubset.create(populationData,researchData);
 
         //Define the hierarchies for the attributes
         //Race
@@ -70,50 +57,45 @@ public class Main {
         hierarchyForGenderConceptId.add("8507", "{8507,8532}");
         hierarchyForGenderConceptId.add("8532", "{8507,8532}");
 
+        // ALL settings need to be done on the population dataset
 
         //Set the attribute types for the research data
-        researchData.getDefinition().setAttributeType("person_id", AttributeType.IDENTIFYING_ATTRIBUTE);
-        researchData.getDefinition().setAttributeType("gender_concept_id", AttributeType.QUASI_IDENTIFYING_ATTRIBUTE);
-        researchData.getDefinition().setAttributeType("birth_datetime", AttributeType.QUASI_IDENTIFYING_ATTRIBUTE);
-        researchData.getDefinition().setAttributeType("race_concept_id", AttributeType.QUASI_IDENTIFYING_ATTRIBUTE);
+        populationData.getDefinition().setAttributeType("person_id", AttributeType.IDENTIFYING_ATTRIBUTE);
+        populationData.getDefinition().setAttributeType("gender_concept_id", AttributeType.QUASI_IDENTIFYING_ATTRIBUTE);
+        populationData.getDefinition().setAttributeType("birth_datetime", AttributeType.QUASI_IDENTIFYING_ATTRIBUTE);
+        populationData.getDefinition().setAttributeType("race_concept_id", AttributeType.QUASI_IDENTIFYING_ATTRIBUTE);
 
         //Set the attribute data types for the research data
-        researchData.getDefinition().setDataType("person_id", DataType.INTEGER);
-        researchData.getDefinition().setDataType("gender_concept_id", DataType.INTEGER);
-        researchData.getDefinition().setDataType("birth_datetime", DataType.createDate("yyyy-MM-dd hh:mm:ss"));
-        researchData.getDefinition().setDataType("race_concept_id", DataType.INTEGER);
-
-
-        //Get the different values of the birthtime attribute in the research data
-        int attributeIndexForBirthDateTime = researchData.getHandle().getColumnIndexOf("birth_datetime");
-        String[] birthDateTimeValues = researchData.getHandle().getDistinctValues(attributeIndexForBirthDateTime);
+        populationData.getDefinition().setDataType("person_id", DataType.INTEGER);
+        populationData.getDefinition().setDataType("gender_concept_id", DataType.INTEGER);
+        populationData.getDefinition().setDataType("birth_datetime", DataType.createDate("yyyy-MM-dd hh:mm:ss"));
+        populationData.getDefinition().setDataType("race_concept_id", DataType.INTEGER);
 
         //Add hierarchies to the research data
-        researchData.getDefinition().setHierarchy("gender_concept_id", hierarchyForGenderConceptId);
-        hierarchyBuilderForDates.prepare(birthDateTimeValues);
-        researchData.getDefinition().setHierarchy("birth_datetime", hierarchyBuilderForDates.build());
-        researchData.getDefinition().setHierarchy("race_concept_id", hierarchyForRaceConceptId);
-
-        //Create the research sample subset
-        DataSubset researchSubset = DataSubset.create(populationData,researchData);
+        populationData.getDefinition().setHierarchy("gender_concept_id", hierarchyForGenderConceptId);
+        //builder does not need to be build first
+        populationData.getDefinition().setHierarchy("birth_datetime", hierarchyBuilderForDates);
+        populationData.getDefinition().setHierarchy("race_concept_id", hierarchyForRaceConceptId);
 
         //Set the arx configuration
         ARXConfiguration config = ARXConfiguration.create();
         config.addPrivacyModel(new DPresence(0.0d,0.1d, researchSubset));
         config.setSuppressionLimit(0.1d);
         config.setQualityModel(Metric.createLossMetric(Metric.AggregateFunction.ARITHMETIC_MEAN));
-        config.setAttributeWeight("gender_concept_id", 0.5d);
-        config.setAttributeWeight("birth_datetime", 0.5d);
-        config.setAttributeWeight("race_concept_id", 0.5d);
+        // DEFAULT is 0.5
+        //config.setAttributeWeight("gender_concept_id", 0.5d);
+        //config.setAttributeWeight("birth_datetime", 0.5d);
+        //config.setAttributeWeight("race_concept_id", 0.5d);
 
         //Create an anonymizer instance
         ARXAnonymizer anonymizer = new ARXAnonymizer();
 
         //Anonymize
-        ARXResult result = anonymizer.anonymize(researchData, config);
+        ARXResult result = anonymizer.anonymize(populationData, config);
 
         //Get the lattice of all considered solutions
-        ARXLattice.ARXNode[][] nodes = result.getLattice().getLevels();
+        //ARXLattice.ARXNode[][] nodes = result.getLattice().getLevels();
+        System.out.println(Arrays.toString(result.getGlobalOptimum().getTransformation()));
 
         //Get the data handle
         DataHandle dataHandle = result.getOutput();
@@ -122,7 +104,8 @@ public class Main {
         System.out.println(dataHandle.getTransformation().getLowestScore() + " " + dataHandle.getTransformation().getHighestScore());
 
         //Write the anonymized data
-        dataHandle.save(basePath + "out/out.csv", ';');
+        //Writes the view of the datahandle (AKA the sample/researchsubset)
+        dataHandle.getView().save(basePath + "out/out.csv", ';');
     }
 
 }
